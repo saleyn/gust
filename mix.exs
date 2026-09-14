@@ -25,6 +25,7 @@ defmodule Gust.Umbrella.MixProject do
       [gust: :permanent]
       |> maybe_add_release_app(:gust_py, "GUST_WITH_PYTHON")
       |> maybe_add_release_app(:gust_shell, "GUST_WITH_SHELL")
+      |> maybe_add_release_app(:gust_k8s, "GUST_WITH_K8S")
 
     [
       gust: [

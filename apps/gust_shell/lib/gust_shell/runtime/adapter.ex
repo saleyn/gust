@@ -16,7 +16,6 @@ defmodule GustShell.Runtime.Adapter do
 
   @impl true
   def kill(task_pid) do
-    GenServer.cast(task_pid, {:kill})
-    :ok
+    :ok == GenServer.cast(task_pid, :kill)
   end
 end

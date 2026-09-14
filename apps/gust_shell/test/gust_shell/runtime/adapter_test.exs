@@ -126,10 +126,10 @@ defmodule GustShell.Runtime.AdapterTest do
       task_pid = self()
 
       # This will send a cast to our test process
-      assert Adapter.kill(task_pid) == :ok
+      assert Adapter.kill(task_pid) == true
 
       # Verify the cast was sent
-      assert_receive {:"$gen_cast", {:kill}}, 100
+      assert_receive {:"$gen_cast", :kill}, 100
     end
 
     test "kill returns :ok even if process doesn't exist" do
@@ -142,19 +142,19 @@ defmodule GustShell.Runtime.AdapterTest do
 
       # Killing a dead process should still return :ok
       # (GenServer.cast doesn't raise on non-existent processes)
-      assert Adapter.kill(fake_pid) == :ok
+      assert Adapter.kill(fake_pid) == true
     end
 
     test "kill is idempotent" do
       task_pid = self()
 
       # Multiple kills should all return :ok
-      assert Adapter.kill(task_pid) == :ok
-      assert Adapter.kill(task_pid) == :ok
+      assert Adapter.kill(task_pid) == true
+      assert Adapter.kill(task_pid) == true
 
       # Verify we got two casts
-      assert_receive {:"$gen_cast", {:kill}}, 100
-      assert_receive {:"$gen_cast", {:kill}}, 100
+      assert_receive {:"$gen_cast", :kill}, 100
+      assert_receive {:"$gen_cast", :kill}, 100
     end
   end
 
@@ -168,7 +168,7 @@ defmodule GustShell.Runtime.AdapterTest do
 
       assert :ok = Adapter.teardown(dag_def, "runtime_1")
       assert :ok = Adapter.on_finished_callback(dag_def, :callback, nil, :ok)
-      assert :ok = Adapter.kill(self())
+      assert true = Adapter.kill(self())
     end
   end
 end

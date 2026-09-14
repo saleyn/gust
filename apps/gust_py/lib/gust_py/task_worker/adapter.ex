@@ -20,7 +20,7 @@ defmodule GustPy.TaskWorker.Adapter do
   alias GustPy.TaskWorker.Error
 
   @impl true
-  def handle_cast({:kill}, %{os_pid: os_pid} = state) do
+  def handle_cast(:kill, %{os_pid: os_pid} = state) do
     :exec.stop(os_pid)
 
     {:stop, :normal, state}

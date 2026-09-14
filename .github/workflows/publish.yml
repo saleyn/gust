@@ -112,7 +112,9 @@ jobs:
           context: .
           file: apps/gust/Dockerfile
           target: final
-          build-args: GUST_WITH_SHELL=true
+          build-args: |
+            GUST_WITH_SHELL=true
+            GUST_WITH_K8S=true
           platforms: linux/amd64
           push: false
           cache-from: type=gha,scope=gust-shell
@@ -441,7 +443,9 @@ jobs:
           - image: gust-shell
             dockerfile: apps/gust/Dockerfile
             target: final
-            build-args: GUST_WITH_SHELL=true
+            build-args: |
+              GUST_WITH_SHELL=true
+              GUST_WITH_K8S=true
           - image: gust-web
             dockerfile: apps/gust_web/Dockerfile
             target: final

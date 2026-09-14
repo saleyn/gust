@@ -60,6 +60,18 @@ config :tailwind,
   ]
 
 config :gust, dag_logger: Gust.DAG.Logger.Database
+
+# K8s tasks are parsed by GustShell.Parser.Adapter when handler: k8s is set.
+# K8s adapter is NOT registered in :dag_adapter since tasks are embedded in shell YAML files
+# (not parsed from separate .k8s files). Runtime and task_worker are accessed via handler delegation.
+
+config :gust_k8s,
+  k8s_api_poll_interval: 2_000,
+  k8s_task_timeout: 30 * 60 * 1_000,
+  k8s_pod_name_prefix: "gust-",
+  k8s_default_namespace: "default",
+  k8s_default_restart_policy: "Never"
+
 # Configures Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",

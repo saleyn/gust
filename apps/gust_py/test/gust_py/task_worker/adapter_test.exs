@@ -51,7 +51,7 @@ defmodule GustPy.TaskWorker.AdapterTest do
 
       state = %{os_pid: os_pid}
 
-      assert {:stop, :normal, ^state} = Adapter.handle_cast({:kill}, state)
+      assert {:stop, :normal, ^state} = Adapter.handle_cast(:kill, state)
 
       assert_receive {:DOWN, ^os_pid, :process, _pid, _reason}, 1_000
 

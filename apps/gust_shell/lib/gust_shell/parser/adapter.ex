@@ -1,6 +1,9 @@
 defmodule GustShell.Parser.Adapter do
   @moduledoc false
 
+  # Suppress warnings for optional GustK8s module that may not be loaded
+  @compile {:no_warn_undefined, GustK8s.Parser.Adapter}
+
   @behaviour Gust.DAG.Parser.Adapter
 
   alias Gust.DAG.{Definition, Graph}
@@ -26,12 +29,21 @@ defmodule GustShell.Parser.Adapter do
     "success_exit_code" => :success_exit_code,
     "user" => :user
   }
-  @task_opts ~w(name run downstream save store_result) ++ Map.keys(@exec_opts)
+  @task_opts ~w(name run handler downstream save store_result) ++ Map.keys(@exec_opts)
   @default_exec_opts [:stdin, :stdout, :stderr, :monitor, {:group, 0}, :kill_group]
   @std_keys ~w(stdin stdout stderr)a
 
   @impl true
   def extensions, do: [".yml", ".yaml"]
+
+  @impl true
+  def handlers do
+    # K8s handler available if GustK8s is loaded
+    case Code.ensure_loaded(GustK8s.Parser.Adapter) do
+      {:module, _} -> ["shell", "k8s"]
+      {:error, _} -> ["shell"]
+    end
+  end
 
   @impl true
   def parse_file(file_path) do
@@ -67,12 +79,8 @@ defmodule GustShell.Parser.Adapter do
     Enum.each(tasks, fn {name, task} ->
       unknown = Enum.reject(task.downstream, &(&1 in names))
 
-      if unknown != [],
-        do:
-          raise(
-            ArgumentError,
-            "task #{inspect(name)}: unknown downstream tasks #{inspect(unknown)}"
-          )
+      unknown != [] &&
+        raise ArgumentError, "task #{inspect(name)}: unknown downstream tasks #{inspect(unknown)}"
     end)
 
     graph =
@@ -102,6 +110,37 @@ defmodule GustShell.Parser.Adapter do
 
   defp parse_task!(task) do
     validate_keys!(task, @task_opts)
+
+    available_handlers = handlers()
+
+    case Map.get(task, "handler", "shell") do
+      "shell" ->
+        # Default shell task
+        parse_shell_task!(task)
+
+      "k8s" ->
+        if "k8s" in available_handlers do
+          # Delegate to K8s parser adapter (loaded dynamically)
+          GustK8s.Parser.Adapter.parse_task!(task)
+        else
+          raise ArgumentError,
+                "K8s handler requested but GustK8s not available. Enable with GUST_WITH_K8S=true"
+        end
+
+      handler ->
+        valid = Enum.join(available_handlers, ", ")
+        raise ArgumentError, "unknown handler '#{handler}', valid handlers: #{valid}"
+    end
+  rescue
+    error in ArgumentError ->
+      name = if is_map(task), do: Map.get(task, "name"), else: nil
+
+      reraise ArgumentError,
+              [message: "task #{inspect(name)}: #{Exception.message(error)}"],
+              __STACKTRACE__
+  end
+
+  defp parse_shell_task!(task) do
     name = Map.get(task, "name")
     command = Map.get(task, "run")
     downstream = Map.get(task, "downstream", [])
@@ -129,13 +168,6 @@ defmodule GustShell.Parser.Adapter do
        store_result: store_result,
        exec_opts: parse_exec_opts!(task)
      }}
-  rescue
-    error in ArgumentError ->
-      name = if is_map(task), do: Map.get(task, "name"), else: nil
-
-      reraise ArgumentError,
-              [message: "task #{inspect(name)}: #{Exception.message(error)}"],
-              __STACKTRACE__
   end
 
   defp validate_downstream!(downstream) do

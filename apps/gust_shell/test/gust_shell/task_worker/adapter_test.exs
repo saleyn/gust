@@ -283,7 +283,7 @@ defmodule GustShell.TaskWorker.AdapterTest do
 
       # Note: This test just verifies the cast handler exists and calls :exec.stop
       # Actual kill behavior would be tested with real process communication
-      assert {:stop, :normal, ^state} = Adapter.handle_cast({:kill}, state)
+      assert {:stop, :normal, ^state} = Adapter.handle_cast(:kill, state)
     end
   end
 

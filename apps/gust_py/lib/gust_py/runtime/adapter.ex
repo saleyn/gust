@@ -7,7 +7,7 @@ defmodule GustPy.Runtime.Adapter do
 
   @impl true
   def kill(task_pid) do
-    GenServer.cast(task_pid, {:kill})
+    :ok == GenServer.cast(task_pid, :kill)
   end
 
   @impl true

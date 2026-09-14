@@ -68,12 +68,12 @@ defmodule GustPy.Runtime.AdapterTest do
     task_pid =
       spawn(fn ->
         receive do
-          {:"$gen_cast", {:kill}} ->
+          {:"$gen_cast", :kill} ->
             send(test_pid, :kill_received)
         end
       end)
 
-    assert :ok = Adapter.kill(task_pid)
+    assert true = Adapter.kill(task_pid)
     assert_receive :kill_received
   end
 end

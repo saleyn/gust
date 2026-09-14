@@ -202,7 +202,7 @@ defmodule GustShell.TaskWorker.AdapterComprehensiveTest do
         opts: %{}
       }
 
-      assert {:stop, :normal, ^state} = Adapter.handle_cast({:kill}, state)
+      assert {:stop, :normal, ^state} = Adapter.handle_cast(:kill, state)
     end
   end
 

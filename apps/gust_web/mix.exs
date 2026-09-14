@@ -75,32 +75,19 @@ defmodule GustWeb.MixProject do
     ]
     |> maybe_add_gust_py()
     |> maybe_add_gust_shell()
+    |> maybe_add_gust_k8s()
     |> add_heroicons()
   end
 
-  defp maybe_add_gust_py(deps) do
-    if System.get_env("GUST_WITH_PYTHON") == "true" do
-      deps ++ [{:gust_py, in_umbrella: true}]
-    else
-      deps
-    end
-  end
+  defp maybe_add(deps, app, var), do: maybe_add_app(deps, System.get_env(var), app)
+  defp maybe_add_app(deps, "true", app), do: [{app, in_umbrella: true} | deps]
+  defp maybe_add_app(deps, _, _app), do: deps
 
-  defp maybe_add_gust_shell(deps) do
-    if System.get_env("GUST_WITH_SHELL") == "true" do
-      deps ++ [{:gust_shell, in_umbrella: true}]
-    else
-      deps
-    end
-  end
+  defp maybe_add_gust_py(deps), do: maybe_add(deps, :gust_py, "GUST_WITH_PYTHON")
+  defp maybe_add_gust_shell(deps), do: maybe_add(deps, :gust_shell, "GUST_WITH_SHELL")
+  defp maybe_add_gust_k8s(deps), do: maybe_add(deps, :gust_k8s, "GUST_WITH_K8S")
 
-  defp gust_dep() do
-    if publish_dep?() do
-      {:gust, "#{@version}"}
-    else
-      {:gust, in_umbrella: true}
-    end
-  end
+  defp gust_dep(), do: {:gust, (publish_dep?() && "#{@version}") || [in_umbrella: true]}
 
   defp add_heroicons(deps) do
     deps ++

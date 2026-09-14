@@ -10,18 +10,35 @@ defmodule GustShell.TaskWorker.Adapter do
   `GustShell.ShellExitError`.
   """
 
+  # Suppress warnings for optional GustK8s module that may not be loaded
+  @compile {:no_warn_undefined, GustK8s.TaskWorker.Adapter}
+
   use Gust.DAG.TaskWorker
 
   alias Gust.DAG.Logger, as: DagLogger
   alias GustShell.Template
 
   @impl true
-  def handle_info(:run, %{task: task, opts: %{run: command, exec_opts: exec_opts}} = state) do
+  def handle_info(:run, %{task: task, opts: opts} = state) do
     DagLogger.set_task(task.id, task.attempt)
 
-    case render(command, exec_opts, task) do
-      {:ok, command, exec_opts} -> start(command, exec_opts, state)
-      {:error, error} -> send_task_error(state, error)
+    # Check if this is a K8s task (has :image key) or a shell task (has :run key)
+    cond do
+      Map.has_key?(opts, :image) ->
+        # Delegate to K8s adapter
+        delegate_to_k8s_adapter(:run, state)
+
+      Map.has_key?(opts, :run) ->
+        # Standard shell task
+        %{run: command, exec_opts: exec_opts} = opts
+
+        case render(command, exec_opts, task) do
+          {:ok, command, exec_opts} -> start(command, exec_opts, state)
+          {:error, error} -> send_task_error(state, error)
+        end
+
+      true ->
+        send_task_error(state, "Task has neither 'run' (shell) nor 'image' (K8s) configured")
     end
   end
 
@@ -63,9 +80,28 @@ defmodule GustShell.TaskWorker.Adapter do
     {:noreply, state}
   end
 
-  def handle_cast({:kill}, %{os_pid: os_pid} = state) do
-    :exec.stop(os_pid)
-    {:stop, :normal, state}
+  def handle_cast(:kill, %{opts: opts} = state) do
+    # Check if this is a K8s task or a shell task
+    cond do
+      Map.has_key?(opts, :image) ->
+        # K8s task: delegate to K8s adapter
+        k8s_adapter = :"Elixir.GustK8s.TaskWorker.Adapter"
+
+        if Code.ensure_loaded(k8s_adapter) == {:module, k8s_adapter} do
+          k8s_adapter.handle_cast(:kill, state)
+        else
+          {:stop, :normal, state}
+        end
+
+      Map.has_key?(state, :os_pid) ->
+        # Shell task with os_pid
+        :exec.stop(state.os_pid)
+        {:stop, :normal, state}
+
+      true ->
+        # Shell task without os_pid (not started yet)
+        {:stop, :normal, state}
+    end
   end
 
   defp start(command, exec_opts, %{task: task} = state) do
@@ -149,4 +185,20 @@ defmodule GustShell.TaskWorker.Adapter do
   defp flatten(nil), do: ""
   defp flatten(output) when is_binary(output), do: output
   defp flatten(output) when is_list(output), do: IO.iodata_to_binary(output)
+
+  defp delegate_to_k8s_adapter(message, state) do
+    # Forward K8s tasks to the K8s adapter (loaded dynamically)
+    k8s_adapter = :"Elixir.GustK8s.TaskWorker.Adapter"
+
+    if Code.ensure_loaded(k8s_adapter) == {:module, k8s_adapter} do
+      k8s_adapter.handle_info(message, state)
+    else
+      error =
+        RuntimeError.exception(
+          "K8s task attempted but GustK8s not available. Enable with GUST_WITH_K8S=true"
+        )
+
+      send_task_error(state, error)
+    end
+  end
 end
