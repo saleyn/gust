@@ -54,10 +54,9 @@ defmodule Gust.DAG.Source.Folder do
   def name, do: "Folder"
 
   defp load_extension(parser_module, folder) do
-    extension = parser_module.extension()
-
-    folder
-    |> Folder.list_files(extension)
+    parser_module.extensions()
+    |> Enum.map(&Folder.list_files(folder, &1))
+    |> Enum.concat()
     |> Enum.map(fn filename ->
       path = Folder.absolute_path(folder, filename)
       dag_name = Folder.dag_name(path)

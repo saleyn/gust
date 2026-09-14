@@ -29,7 +29,7 @@ defmodule FileMonitor.WorkerTest do
     )
 
     Gust.DAGParserAdapterMock
-    |> stub(:extension, fn -> ".ex" end)
+    |> stub(:extensions, fn -> [".ex"] end)
 
     Gust.FileMonitorMock
     |> expect(:start_link, fn keywords ->

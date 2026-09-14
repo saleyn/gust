@@ -76,7 +76,7 @@ defmodule Gust.DAG.Source.Database do
 
       %{success: success |> Enum.reverse(), error: error |> Enum.reverse()}
     rescue
-      e -> {:error, "Error loading DAGs from database: #{inspect(e)}"}
+      e -> {:error, inspect(e)}
     end
   end
 

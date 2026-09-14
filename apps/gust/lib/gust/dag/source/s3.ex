@@ -41,7 +41,6 @@ defmodule Gust.DAG.Source.S3 do
 
   @behaviour Gust.DAG.Source
 
-  require Logger
   alias Gust.DAG.Adapter
   alias Gust.DAG.Parser
   alias Gust.DAG.Source.Polling
@@ -62,13 +61,10 @@ defmodule Gust.DAG.Source.S3 do
       %{success: success |> Enum.reverse(), error: error |> Enum.reverse()}
     else
       {:error, reason} ->
-        Logger.error("S3 DAG source load failed: #{inspect(reason)}")
         {:error, inspect(reason)}
     end
   rescue
-    e ->
-      Logger.error("S3 DAG source load error: #{inspect(e)}")
-      {:error, inspect(e)}
+    e -> {:error, inspect(e)}
   end
 
   @impl true

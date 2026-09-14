@@ -48,7 +48,7 @@ defmodule GustPy.Parser.AdapterTest do
 
   describe "extension/0" do
     test "returns .py" do
-      assert ".py" == Adapter.extension()
+      assert [".py"] == Adapter.extensions()
     end
   end
 

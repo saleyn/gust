@@ -119,8 +119,9 @@ defmodule Gust.DAG.Loader.Worker do
         end)
         |> Map.new()
 
-      {:error, _reason} ->
+      {:error, reason} ->
         # On source-level error, return empty map (no DAGs loaded)
+        Logger.error("Failed to load DAGs from source '#{source.name()}': #{inspect(reason)}")
         %{}
     end
   end

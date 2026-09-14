@@ -99,13 +99,10 @@ defmodule Gust.DAG.Source.Git do
       %{success: success |> Enum.reverse(), error: error |> Enum.reverse()}
     else
       {:error, reason} ->
-        Logger.error("Git DAG source load failed: #{inspect(reason)}")
-        {:error, inspect(reason)}
+        {:error, reason}
     end
   rescue
-    e ->
-      Logger.error("Git DAG source load error: #{inspect(e)}")
-      {:error, inspect(e)}
+    e -> {:error, inspect(e)}
   end
 
   @impl true
@@ -160,6 +157,8 @@ defmodule Gust.DAG.Source.Git do
       {:error, reason} ->
         {:error, "Failed to find historical commit: #{inspect(reason)}"}
     end
+  rescue
+    e -> {:error, "Failed to load DAGs from git: #{inspect(e)}"}
   end
 
   defp get_current_branch(repo) do
@@ -172,20 +171,15 @@ defmodule Gust.DAG.Source.Git do
   end
 
   defp load_extension(parser_module, repo_path) do
-    extension = parser_module.extension()
-
-    repo_path
-    |> Folder.list_files(extension)
+    parser_module.extensions()
+    |> Enum.map(&Folder.list_files(repo_path, &1))
+    |> Enum.concat()
     |> Enum.map(fn filename ->
       path = Folder.absolute_path(repo_path, filename)
       dag_name = Folder.dag_name(path)
       result = Parser.parse(parser_module, path)
       {dag_name, result}
     end)
-  rescue
-    e ->
-      Logger.warning("Failed to load DAGs from git repo: #{inspect(e)}")
-      []
   end
 
   defp ensure_repo_cloned(repo_path) do
@@ -201,7 +195,7 @@ defmodule Gust.DAG.Source.Git do
     end
   rescue
     e in ErlangError ->
-      {:error, "Failed ensure git repository cloned: #{inspect(e.original)}"}
+      {:error, "Failed ensure git repository '#{repo_path}' cloned: #{inspect(e.original)}"}
   end
 
   defp pull_or_clone_repo(repo_path, _url, branch, true) do

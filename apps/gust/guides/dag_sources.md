@@ -14,6 +14,7 @@ Different sources suit different operational models:
 |----------|----------|-----------|-----------------|
 | **Folder** | Development, simple deployments | OS file watching | Very simple |
 | **Git** | GitOps, multi-environment, audit trail | Polling | Moderate |
+| **Git Webhook** | Real-time DAG updates, minimal latency | Webhooks | Moderate |
 | **S3** | Cloud-native, multi-tenant, serverless | Polling | Moderate |
 | **Database** | Dynamic creation, UI-driven, multi-tenant | Polling | Advanced |
 
@@ -94,6 +95,223 @@ config :gust, dag_source_config: [
 
 **Authentication:** Uses AWS SDK credential chain (env vars, IAM role, ~/.aws/credentials)
 
+### Git Webhook Source
+
+#### Overview
+
+The Git Webhook source provides **real-time DAG updates** by receiving push notifications from Git platforms (GitHub, GitLab, Gitea, or any generic Git service). Unlike the polling Git source, webhooks detect changes **instantly** when DAGs are pushed.
+
+**Key differences from Git polling:**
+- ✅ **Real-time** — Changes detected in <1 second (vs 30 second polls)
+- ✅ **Zero latency** — No polling overhead
+- ✅ **Event-driven** — Only reloads when changes actually occur
+- ✅ **Platform support** — GitHub, GitLab, Gitea, generic webhooks
+
+#### Configuration
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: "https://github.com/company/dags.git",               # Required
+  branch: "main",                                           # Optional (default: "main")
+  path: "/var/cache/gust-dags",                             # Optional (default: /tmp)
+  webhook_secret: System.get_env("GITHUB_WEBHOOK_SECRET"),  # Optional (see resolution below)
+  credentials: [...]                                        # Optional (same as Git source)
+]
+```
+
+**Webhook Secret Resolution:**
+
+The `webhook_secret` is resolved automatically in this priority order:
+
+1. **Explicit config** — `webhook_secret:` directly in `dag_source_config`
+2. **Shared environment variable** — `GIT_WEBHOOK_SECRET`
+3. **Platform-specific environment variables:**
+   - `GITHUB_WEBHOOK_SECRET` for GitHub webhooks
+   - `GITLAB_WEBHOOK_SECRET` for GitLab webhooks
+   - `GITEA_WEBHOOK_SECRET` for Gitea webhooks
+
+This means you can use **either** a single `GIT_WEBHOOK_SECRET` for all platforms, **or** platform-specific variables for more control.
+
+**Examples:**
+
+```bash
+# Option 1: Single secret for all platforms
+export GIT_WEBHOOK_SECRET="your-shared-secret-key"
+
+# Option 2: Platform-specific secrets
+export GITHUB_WEBHOOK_SECRET="github-secret-key"
+export GITLAB_WEBHOOK_SECRET="gitlab-secret-key"
+export GITEA_WEBHOOK_SECRET="gitea-secret-key"
+
+# Option 3: Explicit config (takes precedence)
+config :gust, dag_source_config: [
+  webhook_secret: "hardcoded-secret"  # Overrides all env vars
+]
+```
+
+#### Platform Setup
+
+**GitHub**
+
+1. Go to: Settings → Webhooks → Add webhook
+2. Payload URL: `https://your-gust-domain.com/api/webhooks/github`
+3. Content type: `application/json`
+4. Secret: `your-webhook-secret-key`
+5. Events: Select "Push events"
+6. Active: ✓ Enabled
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: "https://github.com/company/dags.git"
+  # Webhook secret automatically resolved from:
+  # GIT_WEBHOOK_SECRET or GITHUB_WEBHOOK_SECRET env vars
+]
+```
+
+**GitLab**
+
+1. Go to: Settings → Webhooks
+2. URL: `https://your-gust-domain.com/api/webhooks/gitlab`
+3. Secret token: `your-secret-token`
+4. Push events: ✓ Enabled
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: "https://gitlab.com/company/dags.git"
+  # Webhook secret automatically resolved from:
+  # GIT_WEBHOOK_SECRET or GITLAB_WEBHOOK_SECRET env vars
+]
+```
+
+**Gitea**
+
+1. Go to: Settings → Webhooks → Add Webhook → Gitea
+2. Target URL: `https://your-gust-domain.com/api/webhooks/gitea`
+3. Secret: `your-secret-key`
+4. Push events: ✓ Enabled
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: "https://gitea.example.com/company/dags.git"
+  # Webhook secret automatically resolved from:
+  # GIT_WEBHOOK_SECRET or GITEA_WEBHOOK_SECRET env vars
+]
+```
+
+**Generic (Other Platforms)**
+
+Use the generic webhook endpoint: `https://your-gust-domain.com/api/webhooks/generic`
+
+Authorization via Bearer token: `Authorization: Bearer {webhook_secret}`
+
+#### Webhook Endpoints
+
+Configure your Git platform to POST to one of these:
+
+```
+POST /api/webhooks/github    # GitHub push webhooks
+POST /api/webhooks/gitlab    # GitLab push webhooks
+POST /api/webhooks/gitea     # Gitea push webhooks
+POST /api/webhooks/generic   # Generic/custom webhooks
+```
+
+#### Signature Validation
+
+Webhooks are secured with HMAC signatures:
+
+| Platform | Header | Algorithm | Format |
+|----------|--------|-----------|--------|
+| **GitHub** | `X-Hub-Signature-256` | HMAC-SHA256 | `sha256={hex}` |
+| **GitLab** | `X-Gitlab-Token` | Token match | Token string |
+| **Gitea** | `X-Gitea-Signature` | HMAC-SHA256 | Hex digest |
+| **Generic** | `Authorization` | Bearer token | `Bearer {token}` |
+
+#### Workflow Example
+
+1. **Developer pushes DAG changes:**
+   ```bash
+   git commit -m "Add new backup DAG"
+   git push origin main
+   ```
+
+2. **Git platform sends webhook** to Gust instantly
+
+3. **Gust validates signature** and parses payload
+
+4. **DAG reloads automatically** (<1 second)
+
+5. **New DAG ready for execution** immediately
+
+#### Performance
+
+- **Change detection:** <1 second (instant webhook)
+- **Latency:** Typical: 50-500ms
+- **Scaling:** Event-driven (any number of DAGs)
+- **Overhead:** Zero polling
+
+#### Webhook vs Polling Comparison
+
+```
+Webhook (real-time):        Change detected in <1s
+Polling (default 30s):      Change detected in up to 30s
+```
+
+Use webhooks when you need immediate DAG updates. Use polling when you prefer simplicity without webhook infrastructure.
+
+#### Configuration Example
+
+**Option 1: Shared secret (.env.example)**
+```bash
+DAG_REPO_URL=https://github.com/company/dags.git
+GIT_WEBHOOK_SECRET=your-random-32-char-secret-key-here
+GIT_TOKEN=github_token_here
+```
+
+**Option 2: Platform-specific secrets (.env.example)**
+```bash
+DAG_REPO_URL=https://github.com/company/dags.git
+GITHUB_WEBHOOK_SECRET=github-secret-key-here
+GITLAB_WEBHOOK_SECRET=gitlab-secret-key-here
+GITEA_WEBHOOK_SECRET=gitea-secret-key-here
+GIT_TOKEN=github_token_here
+```
+
+**config/webhook.exs (minimal - uses automatic resolution):**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: System.get_env("DAG_REPO_URL"),
+  branch: "main",
+  # webhook_secret is automatically resolved from:
+  # 1. GIT_WEBHOOK_SECRET env var (if set)
+  # 2. Platform-specific env vars (GITHUB_/GITLAB_/GITEA_WEBHOOK_SECRET)
+  credentials: [
+    type: :token,
+    username: "git",
+    token: System.get_env("GIT_TOKEN")
+  ]
+]
+```
+
+**config/webhook.exs (explicit - overrides env vars):**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.GitWebhook
+config :gust, dag_source_config: [
+  url: System.get_env("DAG_REPO_URL"),
+  branch: "main",
+  webhook_secret: System.get_env("WEBHOOK_SECRET"),  # Explicit value takes precedence
+  credentials: [
+    type: :token,
+    username: "git",
+    token: System.get_env("GIT_TOKEN")
+  ]
+]
+```
+
 ### Database Source
 
 Store DAGs in the database:
@@ -124,10 +342,10 @@ config :gust, dag_source_config: [
 
 ### Features
 
-- ✅ **Instant change detection** — Uses OS file watching (inotify, fsevents)
-- ✅ **Zero external dependencies** — Built-in FileSystem library
-- ✅ **No polling overhead** — Scales to many DAGs
-- ✅ **Simple debugging** — Easy to inspect files
+- **Instant change detection** — Uses OS file watching (inotify, fsevents)
+- **Zero external dependencies** — Built-in FileSystem library
+- **No polling overhead** — Scales to many DAGs
+- **Simple debugging** — Easy to inspect files
 
 ### Examples
 
@@ -666,11 +884,11 @@ config :gust, dag_source_config: [url: "git@github.com:company/dags.git"]
 ## Future Enhancements
 
 Possible future DAG sources under consideration:
-- **Git Webhooks:** Real-time updates when DAGs are pushed (no polling)
 - **HTTP API Source:** Fetch DAGs from remote HTTP endpoint
 - **Consul/etcd:** Distributed configuration management
 - **Multi-source Hybrid:** Load from primary source with fallback to secondary
 - **CloudFormation/Terraform:** Infrastructure-as-Code DAG definitions
+- **Kubernetes ConfigMaps:** Load DAGs from Kubernetes native resources
 
 ## See Also
 
