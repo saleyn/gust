@@ -2,54 +2,36 @@ defmodule Gust.FileMonitor.Worker do
   @moduledoc false
 
   use GenServer
-  alias Gust.DAG.Adapter
-  alias Gust.DAG.Folder
-  alias Gust.DAG.Parser
-  alias Gust.FileMonitor
-
-  @impl true
-  def init(%{dags_folder: folder, loader: loader}) do
-    {:ok, watcher_pid} = FileMonitor.start_link(dirs: [folder], latency: 0)
-    FileMonitor.watch(watcher_pid)
-    events_queue = MapSet.new()
-
-    {:ok, %{watcher_pid: watcher_pid, events_queue: events_queue, loader: loader}}
-  end
+  require Logger
 
   def start_link(args) do
     GenServer.start_link(__MODULE__, args)
   end
 
   @impl true
-  def handle_info({:file_event, _watcher_pid, {path, _events}}, %{events_queue: queue} = state) do
-    if MapSet.member?(queue, path) do
-      {:noreply, state}
-    else
-      Process.send_after(self(), {:check_queue, path}, delay())
-      {:noreply, %{state | events_queue: MapSet.put(queue, path)}}
+  def init(%{loader: loader} = args) do
+    source = get_source()
+
+    case source.monitor(loader, args) do
+      {:ok, monitor_pid} ->
+        Logger.info("Started #{source.name()} monitor for DAG changes")
+        {:ok, %{monitor_pid: monitor_pid, source: source, loader: loader}}
+
+      {:error, reason} ->
+        {:stop, "Failed to start DAG source monitor: #{inspect(reason)}"}
     end
   end
 
-  def handle_info({:check_queue, path}, %{events_queue: queue, loader: loader} = state) do
-    case adapter_for_path(path) do
-      nil -> nil
-      adapter -> broadcast_path(path, loader, adapter)
+  @impl true
+  def handle_info(msg, state) do
+    if state.monitor_pid && is_pid(state.monitor_pid) do
+      send(state.monitor_pid, msg)
     end
 
-    {:noreply, %{state | events_queue: MapSet.delete(queue, path)}}
+    {:noreply, state}
   end
 
-  defp delay, do: Application.get_env(:gust, :file_reload_delay)
-
-  defp broadcast_path(path, loader, adapter) do
-    action = Folder.action(path)
-    dag_name = Folder.dag_name(path)
-
-    send(loader, {dag_name, Parser.parse(adapter, path), action})
-  end
-
-  defp adapter_for_path(path) do
-    extension = Path.extname(path)
-    Adapter.parser_for_extension(extension)
+  defp get_source do
+    Application.get_env(:gust, :dag_source, Gust.DAG.Source.Folder)
   end
 end

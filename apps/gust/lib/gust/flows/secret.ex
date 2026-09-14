@@ -39,7 +39,7 @@ defmodule Gust.Flows.Secret do
   end
 
   defp validate_json(value, changeset) when is_bitstring(value) do
-    case Jason.decode(value) do
+    case Glazer.JSON.decode(value) do
       {:ok, _decoded} -> changeset
       {:error, _} -> add_error(changeset, :value, "must be valid JSON")
     end

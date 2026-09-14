@@ -1,3 +1,7 @@
+all: compile
+
+compile:
+	mix $@
 
 dev:
 	mix phx.server

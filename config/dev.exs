@@ -89,6 +89,11 @@ config :phoenix, :stacktrace_depth, 20
 config :gust, file_reload_delay: 1_000
 config :gust, b64_secrets_cloak_key: System.get_env("B64_SECRETS_CLOAK_KEY")
 config :gust, dags_folder: Path.join(File.cwd!(), "dags")
+
+# DAG Source Configuration
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [folder: Path.join(File.cwd!(), "dags")]
+
 config :gust, dag_runner_supervisor: Gust.DAG.RunnerSupervisor.DynamicSupervisor
 config :gust, dag_task_runner_supervisor: Gust.DAG.TaskRunnerSupervisor.DynamicSupervisor
 config :gust, dag_cron_reload: true

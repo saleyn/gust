@@ -1,0 +1,678 @@
+# DAG Sources
+
+Gust supports multiple pluggable sources for loading DAG definitions. This guide explains how to choose and configure the source that best fits your operational workflow.
+
+## Overview
+
+A **DAG source** defines:
+- **Where** DAGs come from (filesystem folder, Git repository, database)
+- **How** they are monitored for changes (file watching, polling, webhooks)
+
+Different sources suit different operational models:
+
+| Source   | Best For | Monitoring | Setup Complexity |
+|----------|----------|-----------|-----------------|
+| **Folder** | Development, simple deployments | OS file watching | Very simple |
+| **Git** | GitOps, multi-environment, audit trail | Polling | Moderate |
+| **S3** | Cloud-native, multi-tenant, serverless | Polling | Moderate |
+| **Database** | Dynamic creation, UI-driven, multi-tenant | Polling | Advanced |
+
+## Quick Start
+
+### Default: Folder Source
+
+Out of the box, Gust loads DAGs from a local folder:
+
+```elixir
+# config/dev.exs
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [folder: Path.join(File.cwd!(), "dags")]
+```
+
+**Setup:** Just create `./dags` folder and add DAG files (`.ex` or `.yml`)
+
+```
+dags/
+├── backup.ex
+├── deploy.ex
+└── analytics.yml
+```
+
+**Changes detected:** Instantly (OS file watching)
+
+### Git Source
+
+Load DAGs from a Git repository:
+
+```elixir
+# config/git.exs
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [
+  url: "https://github.com/company/dags.git",
+  branch: "main",
+  path: "/var/cache/gust-dags",
+  poll_seconds: 30
+]
+```
+
+**Setup:**
+1. Add egit to `mix.exs`: `{:egit, "~> 0.3"}`
+2. Run `mix deps.get`
+3. Update config with repository URL
+4. Source `config/git.exs` (or use environment config)
+
+**Changes detected:** Polls repository every 30 seconds (configurable)
+
+**Authentication:** Optional - supports SSH keys, tokens, username/password
+
+### S3 Source
+
+Load DAGs from an AWS S3 bucket:
+
+```elixir
+# config/s3.exs
+config :gust, dag_source: Gust.DAG.Source.S3
+config :gust, dag_source_config: [
+  bucket: "my-company-dags",
+  prefix: "workflows/",
+  region: "us-west-2",
+  poll_seconds: 30
+]
+```
+
+**Setup:**
+1. Add ex_aws dependencies to `mix.exs`:
+   ```elixir
+   {:ex_aws, "~> 2.4", optional: true},
+   {:ex_aws_s3, "~> 2.4", optional: true}
+   ```
+2. Run `mix deps.get`
+3. Update config with S3 bucket details
+4. Source `config/s3.exs` (or use environment config)
+
+**Changes detected:** Polls S3 every 30 seconds (configurable)
+
+**Authentication:** Uses AWS SDK credential chain (env vars, IAM role, ~/.aws/credentials)
+
+### Database Source
+
+Store DAGs in the database:
+
+```elixir
+# config/database.exs
+config :gust, dag_source: Gust.DAG.Source.Database
+config :gust, dag_source_config: [poll_seconds: 30]
+```
+
+**Setup:**
+1. Run migrations: `mix ecto.migrate`
+2. Insert DAGs into `gust_dag_sources` table
+3. Source `config/database.exs`
+
+**Changes detected:** Polls database every 30 seconds (configurable)
+
+## Folder Source
+
+### Configuration
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [
+  folder: "/path/to/dags"  # Required
+]
+```
+
+### Features
+
+- ✅ **Instant change detection** — Uses OS file watching (inotify, fsevents)
+- ✅ **Zero external dependencies** — Built-in FileSystem library
+- ✅ **No polling overhead** — Scales to many DAGs
+- ✅ **Simple debugging** — Easy to inspect files
+
+### Examples
+
+**Development:**
+```elixir
+# config/dev.exs
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [folder: Path.join(File.cwd!(), "dags")]
+```
+
+**Production:**
+```elixir
+# config/prod.exs
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [folder: "/dags"]
+```
+
+## Git Source
+
+### Configuration
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [
+  url: "https://github.com/company/dags.git",  # Required
+  branch: "main",                              # Optional (default: "main")
+  path: "/tmp/gust-dags-repo",                 # Optional (default: /tmp)
+  poll_seconds: 30,                            # Optional (default: 30)
+  credentials: [...]                           # Optional
+]
+```
+
+### Authentication Methods
+
+#### 1. SSH Key (Recommended for private repos)
+
+```elixir
+credentials: [
+  type: :ssh_key,
+  username: "git",
+  privkey_path: "/home/app/.ssh/id_rsa",
+  pubkey_path: "/home/app/.ssh/id_rsa.pub",
+  passphrase: System.get_env("SSH_KEY_PASSPHRASE", "")
+]
+```
+
+Or with embedded keys:
+
+```elixir
+credentials: [
+  type: :ssh_key,
+  username: "git",
+  privkey: File.read!("/home/app/.ssh/id_rsa"),
+  pubkey: File.read!("/home/app/.ssh/id_rsa.pub"),
+  passphrase: System.get_env("SSH_KEY_PASSPHRASE", "")
+]
+```
+
+#### 2. Username/Password
+
+```elixir
+credentials: [
+  type: :userpass,
+  username: System.get_env("GIT_USERNAME"),
+  password: System.get_env("GIT_PASSWORD")
+]
+```
+
+#### 3. Personal Access Token (Most Secure)
+
+```elixir
+credentials: [
+  type: :token,
+  username: "git",
+  token: System.get_env("GIT_TOKEN")
+]
+```
+
+#### 4. SSH Agent
+
+```elixir
+credentials: [
+  type: :ssh_agent,
+  username: "git"
+]
+```
+
+### Environment Variables
+
+For sensitive credentials, use environment variables:
+
+- `GIT_CREDENTIALS_USERNAME` — Username (for userpass/token)
+- `GIT_CREDENTIALS_PASSWORD` — Password (for userpass) or token (for :token)
+- `SSH_KEY_PASSPHRASE` — SSH key passphrase (for :ssh_key)
+
+### Workflow Example
+
+1. **Developer** updates DAGs and pushes to Git:
+   ```bash
+   git commit -m "Add new analytics DAG"
+   git push origin main
+   ```
+
+2. **Gust** detects change within 30 seconds (or your configured interval)
+
+3. **DAG automatically reloads** without restarting Gust
+
+4. **New DAG is available** for execution immediately
+
+### Configuration Examples
+
+**GitHub with SSH:**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [
+  url: "git@github.com:company/dags.git",
+  branch: "main",
+  credentials: [
+    type:         :ssh_key,
+    username:     "git",
+    privkey_path: "/home/app/.ssh/id_rsa",
+    pubkey_path:  "/home/app/.ssh/id_rsa.pub",
+    passphrase:   System.get_env("SSH_KEY_PASSPHRASE", "")
+  ]
+]
+```
+
+**GitHub with Personal Token:**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [
+  url: "https://github.com/company/dags.git",
+  branch: "main",
+  credentials: [
+    type:     :token,
+    username: "bot-user",
+    token:    System.get_env("GITHUB_TOKEN")
+  ]
+]
+```
+
+**GitLab with SSH:**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [
+  url: "git@gitlab.com:company/dags.git",
+  branch: "main",
+  credentials: [
+    type:         :ssh_key,
+    username:     "git",
+    privkey_path: System.get_env("SSH_KEY_PATH"),
+    pubkey_path:  System.get_env("SSH_PUBKEY_PATH")
+  ]
+]
+```
+
+## Database Source
+
+### Configuration
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.Database
+config :gust, dag_source_config: [
+  poll_seconds: 30  # Optional (default: 30)
+]
+```
+
+### Setup
+
+1. **Run migration:**
+   ```bash
+   mix ecto.migrate
+   ```
+
+2. **Insert DAGs:**
+   ```sql
+   INSERT INTO gust_dag_sources (name, content, format, enabled, inserted_at, updated_at)
+   VALUES (
+     'daily_backup',
+     'defmodule DailyBackup do
+       use Gust.DSL
+       task :backup do
+         {:shell, "backup.sh"}
+       end
+     end',
+     'elixir',
+     true,
+     NOW(),
+     NOW()
+   );
+   ```
+
+3. **Or via Elixir:**
+   ```elixir
+   Gust.Repo.insert!(%Gust.DagSource{
+     name:    "daily_backup",
+     content: File.read!("priv/dags/daily_backup.ex"),
+     format:  "elixir",
+     enabled: true
+   })
+   ```
+
+### Workflow Example
+
+1. **Admin inserts or updates DAG** in database (or via UI)
+
+2. **Gust detects change** within 30 seconds (or your configured interval)
+
+3. **DAG becomes available** for execution immediately
+
+4. **No redeployment needed** — perfect for dynamic systems
+
+### Schema
+
+```
+Table: gust_dag_sources
+├── id (primary key)
+├── name (string, unique) — DAG identifier
+├── content (text) — DAG definition (Elixir or YAML code)
+├── format (string) — "elixir" or "yaml"
+├── version (integer) — Optional version tracking
+├── enabled (boolean) — Is this DAG active?
+├── description (text) — Optional documentation
+└── timestamps (inserted_at, updated_at)
+```
+
+### Managing DAGs
+
+**Enable/Disable DAG:**
+```sql
+UPDATE gust_dag_sources SET enabled = false WHERE name = 'old_dag';
+```
+
+**View all DAGs:**
+```sql
+SELECT name, format, enabled, updated_at FROM gust_dag_sources ORDER BY name;
+```
+
+**Update DAG:**
+```sql
+UPDATE gust_dag_sources SET content = '...', updated_at = NOW() WHERE name = 'my_dag';
+```
+
+**Version History (keep updated_at):**
+```sql
+-- Gust will reload when updated_at changes
+UPDATE gust_dag_sources
+SET content = '...', version = version + 1, updated_at = NOW()
+WHERE name = 'my_dag';
+```
+
+## S3 Source
+
+### Configuration
+
+```elixir
+config :gust, dag_source: Gust.DAG.Source.S3
+config :gust, dag_source_config: [
+  bucket: "my-dags-bucket",               # Required
+  prefix: "workflows/",                   # Optional (default: "")
+  region: "us-west-2",                    # Optional (default: "us-east-1")
+  poll_seconds: 30,                       # Optional (default: 30)
+  access_key_id: nil,                     # Optional (uses credential chain if nil)
+  secret_access_key: nil                  # Optional (uses credential chain if nil)
+]
+```
+
+### Authentication
+
+The S3 source uses the AWS SDK credential resolution chain in this order:
+
+1. **Explicit credentials** (if provided in config):
+   ```elixir
+   config :gust, dag_source_config: [
+     bucket: "my-dags",
+     access_key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+     secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY")
+   ]
+   ```
+
+2. **Environment variables:**
+   ```bash
+   export AWS_ACCESS_KEY_ID="AKIA..."
+   export AWS_SECRET_ACCESS_KEY="wJal..."
+   ```
+
+3. **AWS credentials file** (~/.aws/credentials):
+   ```ini
+   [default]
+   aws_access_key_id = AKIA...
+   aws_secret_access_key = wJal...
+   ```
+
+4. **IAM role** (when running on EC2, ECS, or Lambda)
+
+### S3 Bucket Structure
+
+Organize DAGs in your S3 bucket with a clear structure:
+
+```
+s3://my-dags-bucket/
+├── workflows/
+│   ├── backup.ex
+│   ├── deploy.ex
+│   └── analytics.yml
+├── scheduled/
+│   ├── daily_cleanup.ex
+│   └── hourly_sync.ex
+└── deprecated/
+    └── old_workflow.ex
+```
+
+Use the `prefix` configuration to limit which DAGs load:
+
+```elixir
+# Load only workflows/ directory
+config :gust, dag_source_config: [
+  bucket: "my-dags-bucket",
+  prefix: "workflows/"
+]
+```
+
+### DAG Naming
+
+S3 object keys are converted to DAG names by removing the prefix and extension:
+
+- `workflows/backup.ex` (with prefix "workflows/") → DAG name: `backup`
+- `workflows/production/deploy.ex` → DAG name: `production/deploy`
+- `workflows/v2/analytics.yml` → DAG name: `v2/analytics`
+
+This preserves directory structure in DAG names, allowing organization across multiple deployment tiers.
+
+### Configuration Examples
+
+**Development with local AWS credentials:**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.S3
+config :gust, dag_source_config: [
+  bucket: "dev-dags",
+  region: "us-east-1"
+  # Uses ~/.aws/credentials automatically
+]
+```
+
+**Production with IAM role (EC2/ECS):**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.S3
+config :gust, dag_source_config: [
+  bucket: "prod-dags-bucket",
+  prefix: "production/",
+  region: "us-west-2",
+  poll_seconds: 60
+  # No credentials needed - uses IAM role
+]
+```
+
+**Multi-environment with explicit credentials:**
+```elixir
+config :gust, dag_source: Gust.DAG.Source.S3
+config :gust, dag_source_config: [
+  bucket: System.get_env("AWS_DAG_BUCKET"),
+  region: System.get_env("AWS_REGION", "us-east-1"),
+  access_key_id: System.get_env("AWS_ACCESS_KEY_ID"),
+  secret_access_key: System.get_env("AWS_SECRET_ACCESS_KEY"),
+  poll_seconds: 30
+]
+```
+
+### Workflow Example
+
+1. **Developer updates DAG** in Git:
+   ```bash
+   git commit -m "Add new data pipeline"
+   git push origin main
+   ```
+
+2. **CI/CD deploys to S3:**
+   ```bash
+   aws s3 cp dags/analytics.ex s3://prod-dags/workflows/
+   ```
+
+3. **Gust detects change** within 30 seconds
+
+4. **New DAG is immediately available** for execution
+
+### IAM Permissions
+
+For Gust to access S3, the IAM role/user needs these permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::my-dags-bucket"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::my-dags-bucket/*"
+    }
+  ]
+}
+```
+
+### Supported File Formats
+
+S3 source automatically detects and parses:
+- `.ex` — Elixir DAG definitions
+- `.yml` — YAML DAG definitions
+- `.yaml` — YAML DAG definitions (alternative extension)
+
+Other files are silently ignored.
+
+### Performance
+
+- **Load time:** 500ms-5s (network latency + S3 API)
+- **Change detection:** Every 30 seconds (configurable)
+- **Overhead:** S3 API calls (minimal cost)
+- **Scales to:** 100s-1000s of DAGs
+
+### Troubleshooting
+
+**DAGs not loading:**
+- Check IAM permissions (s3:ListBucket, s3:GetObject)
+- Verify bucket name and region are correct
+- Check S3 objects have correct extensions (.ex, .yml, .yaml)
+- Look for AWS auth errors in logs
+
+**Slow loading:**
+- Reduce number of objects by using a more specific `prefix`
+- Increase `poll_seconds` to reduce polling frequency
+- Check network connectivity to S3
+
+**Authentication failing:**
+- Verify AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set
+- Check IAM role is attached to EC2/ECS instance
+- Verify credentials have not expired
+
+## Switching Sources
+
+To change sources, only configuration needs to be updated:
+
+### From Folder to Git
+
+```elixir
+# Before (config/dev.exs)
+config :gust, dag_source: Gust.DAG.Source.Folder
+config :gust, dag_source_config: [folder: "/dags"]
+
+# After (config/dev.exs)
+config :gust, dag_source: Gust.DAG.Source.Git
+config :gust, dag_source_config: [url: "git@github.com:company/dags.git"]
+```
+
+**No code changes needed** — just update config and restart Gust.
+
+## Performance Considerations
+
+### Folder Source
+- **Load time:** ~50-100ms (local filesystem)
+- **Change detection:** Instant (OS watching)
+- **Overhead:** Minimal
+- **Scales to:** 1000s of DAGs
+
+### Git Source
+- **Load time:** 100ms-1s (git operations)
+- **Change detection:** Every 30 seconds (configurable)
+- **Overhead:** Disk I/O, network latency
+- **Scales to:** 100s of DAGs
+
+### S3 Source
+- **Load time:** 500ms-5s (S3 API + network)
+- **Change detection:** Every 30 seconds (configurable)
+- **Overhead:** S3 API calls (minimal cost)
+- **Scales to:** 100s-1000s of DAGs
+
+### Database Source
+- **Load time:** 10-100ms (database query)
+- **Change detection:** Every 30 seconds (configurable)
+- **Overhead:** Database queries, network latency
+- **Scales to:** 1000s of DAGs
+
+**Recommendation:**
+- **Development:** Use Folder source (instant feedback)
+- **Small-to-medium deployments:** Use Git source (GitOps)
+- **Cloud-native deployments:** Use S3 source (scalability + managed service)
+- **Large/dynamic systems:** Use Database source (maximum flexibility)
+
+## Troubleshooting
+
+### DAG not loading
+
+**Folder source:**
+- Check file permissions (readable by Gust process)
+- Verify DAG syntax with `mix compile`
+- Check logs for parse errors
+
+**Git source:**
+- Verify URL is correct
+- Check branch exists
+- Verify credentials (if private repo)
+- Check network connectivity
+- Look for egit errors in logs
+
+**Database source:**
+- Run migrations: `mix ecto.migrate`
+- Verify DAG record has `enabled = true`
+- Check DAG syntax (Elixir or YAML)
+- Verify timestamp was updated: `SELECT updated_at FROM gust_dag_sources WHERE name = '...'`
+
+### Change not detected
+
+**Folder source:**
+- File watching requires inotify (Linux) or fsevents (macOS)
+- Try restarting Gust if watcher fails
+
+**Git/Database source:**
+- Check poll_seconds configuration (default 30s)
+- For Git: Verify commit is pushed to configured branch
+- For Database: Verify `updated_at` was changed
+
+### Authentication failing (Git)
+
+- Verify credentials type matches repository URL (SSH for git@, HTTPS for https://)
+- Check SSH keys have correct permissions (600)
+- Verify token/password is not expired
+- Check System.get_env() for environment variable credentials
+
+## Future Enhancements
+
+Possible future DAG sources under consideration:
+- **Git Webhooks:** Real-time updates when DAGs are pushed (no polling)
+- **HTTP API Source:** Fetch DAGs from remote HTTP endpoint
+- **Consul/etcd:** Distributed configuration management
+- **Multi-source Hybrid:** Load from primary source with fallback to secondary
+- **CloudFormation/Terraform:** Infrastructure-as-Code DAG definitions
+
+## See Also
+
+- [Writing DAGs](writing_dags.md) — Create DAG definitions
+- [Configuration](configuration.md) — General Gust configuration

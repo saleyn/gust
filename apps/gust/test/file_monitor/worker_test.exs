@@ -17,6 +17,9 @@ defmodule FileMonitor.WorkerTest do
   setup :set_mox_from_context
 
   setup %{tmp_dir: tmp_dir} do
+    # Set short debounce delay for tests
+    Application.put_env(:gust, :file_reload_delay, 50)
+
     Application.put_env(:gust, :dag_adapter,
       elixir: %{
         parser: Gust.DAGParserAdapterMock,
@@ -44,6 +47,10 @@ defmodule FileMonitor.WorkerTest do
 
     Gust.PubSub.subscribe_all_files("update")
     Process.monitor(pid)
+
+    on_exit(fn ->
+      Application.put_env(:gust, :file_reload_delay, 1_000)
+    end)
 
     %{dag_watcher_pid: pid}
   end
