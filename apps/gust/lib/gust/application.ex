@@ -45,10 +45,15 @@ defmodule Gust.Application do
 
   use Application
   alias Gust.DAG
+  alias Gust.DAG.Adapter
+  alias Gust.DAG.Logger.Database, as: DAGLoggerDatabase
+  alias Gust.DAG.Source.Config, as: SourceConfig
 
   @impl true
   def start(_type, _args) do
-    LoggerBackends.add(Gust.DAG.Logger.Database)
+    LoggerBackends.add(DAGLoggerDatabase)
+    Adapter.reload()
+    SourceConfig.reload()
 
     env = System.get_env("MIX_ENV") || Mix.env() |> to_string()
     folder = Application.get_env(:gust, :dags_folder)

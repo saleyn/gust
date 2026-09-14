@@ -1,4 +1,6 @@
 defmodule Gust.AppChildren do
+  alias Gust.DAG.Source.Config
+
   @moduledoc """
   Builds the application child list for a given runtime role and environment.
 
@@ -61,9 +63,11 @@ defmodule Gust.AppChildren do
   defp dag_watcher("prod", _folder), do: []
 
   defp dag_watcher(_env, folder) do
-    [
-      {Gust.FileMonitor.Worker, %{dags_folder: folder, loader: dag_loader()}}
-    ]
+    Config.read()
+    |> Enum.map(fn source ->
+      id = Map.get(source, :id) || Map.get(source, "id")
+      {Gust.FileMonitor.Worker, %{id: id, dags_folder: folder, loader: dag_loader()}}
+    end)
   end
 
   defp dag_loader_worker("test", _folder), do: []

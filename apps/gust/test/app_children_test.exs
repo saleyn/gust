@@ -10,7 +10,11 @@ defmodule AppChildrenTest do
         Gust.Run.DispatcherSupervisor,
         {Gust.DAG.Loader.Worker, %{dags_folder: @dags_folder}},
         {Gust.FileMonitor.Worker,
-         %{dags_folder: @dags_folder, loader: Application.get_env(:gust, :dag_loader)}},
+         %{
+           id: "default-folder",
+           dags_folder: @dags_folder,
+           loader: Application.get_env(:gust, :dag_loader)
+         }},
         Gust.Leader,
         {DynamicSupervisor, [strategy: :one_for_one, name: Gust.LeaderOnlySupervisor]},
         {DynamicSupervisor,
