@@ -82,7 +82,7 @@ defmodule Gust.DAG.Runner.RunGateway.Default do
     :exit, {:shutdown, _call} -> {:error, :run_not_active}
     :exit, {{:shutdown, _reason}, _call} -> {:error, :run_not_active}
     :exit, {:timeout, _call} -> {:error, :run_command_timeout}
-    :exit, _reason -> {:error, :run_command_failed}
+    :exit, _reason -> {:error, :cannot_kill_task}
   end
 
   defp protect_active_lease({:error, :run_not_active}, %Run{} = run) do
