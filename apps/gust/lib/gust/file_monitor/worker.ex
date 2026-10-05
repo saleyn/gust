@@ -63,19 +63,21 @@ defmodule Gust.FileMonitor.Worker do
 
   defp monitor_specs(loader, args, id) do
     Config.read()
-    |> Enum.map(&start_monitor(&1, loader, args, id))
+    |> Enum.filter(&(source_id(&1) == id))
+    |> case do
+      [] -> raise ArgumentError, "No DAG source configured with id #{inspect(id)}"
+      configs -> Enum.map(configs, &start_monitor(&1, loader, id))
+    end
   end
 
-  defp start_monitor(config, loader, args, id) do
+  defp source_id(config), do: Map.get(config, :id) || Map.get(config, "id")
+
+  defp start_monitor(config, loader, id) do
     config_id = Map.get(config, :id) || Map.get(config, "id")
     source_module = Config.source_module(config)
     status = read_monitor_status(source_module, config_id)
 
-    config =
-      config
-      |> Map.put(:status, status)
-      |> Map.put_new(:folder, Map.get(args, :dags_folder))
-      |> Map.put_new(:dags_folder, Map.get(args, :dags_folder))
+    config = Map.put(config, :status, status)
 
     case source_module.monitor(loader, config) do
       {:ok, monitor_pid} ->

@@ -10,7 +10,7 @@ defmodule Gust.DAG.Source do
   """
   alias Gust.DAG.Source.Config
 
-  @optional_callbacks load: 1
+  @optional_callbacks load: 1, validate: 2
 
   @doc """
   Get the name of the source implementation for logging/debugging.
@@ -43,8 +43,36 @@ defmodule Gust.DAG.Source do
   """
   @callback monitor(loader_pid :: pid(), config :: map()) :: {:ok, pid()} | {:error, term()}
 
+  @doc """
+  Validates source-specific startup requirements (e.g. a folder exists).
+
+  Optional. Sources without startup requirements can omit it.
+  """
+  @callback validate(env :: String.t(), config :: map()) :: :ok | {:error, String.t()}
+
   @typedoc "Status of the DAG source monitor process."
   @type monitor_status :: :running | :paused | :stopped
+
+  @doc """
+  Validates every configured source at startup, raising with the source id on failure.
+  """
+  @spec validate_all!(String.t() | atom(), [map()]) :: :ok
+  def validate_all!(env, source_configs \\ Config.read()) do
+    Enum.each(source_configs, fn config ->
+      module = Config.source_module(config)
+
+      if Code.ensure_loaded?(module) and function_exported?(module, :validate, 2) do
+        case module.validate(env, config) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            id = Map.get(config, :id) || Map.get(config, "id")
+            raise ArgumentError, "DAG source #{inspect(id)}: #{reason}"
+        end
+      end
+    end)
+  end
 
   @doc false
   def config do

@@ -20,6 +20,9 @@ defmodule FileMonitor.WorkerTest do
   setup %{tmp_dir: tmp_dir} do
     # Set short debounce delay for tests
     Application.put_env(:gust, :file_reload_delay, 50)
+    Application.delete_env(:gust, :dag_sources)
+    original_dags_folder = Application.get_env(:gust, :dags_folder)
+    Application.put_env(:gust, :dags_folder, tmp_dir)
 
     Application.put_env(:gust, :dag_adapter,
       elixir: %{
@@ -45,7 +48,7 @@ defmodule FileMonitor.WorkerTest do
 
     pid =
       start_link_supervised!(
-        {Gust.FileMonitor.Worker, %{id: "default-folder", dags_folder: tmp_dir, loader: self()}}
+        {Gust.FileMonitor.Worker, %{id: "default-folder", loader: self()}}
       )
 
     Gust.PubSub.subscribe_all_files("update")
@@ -53,6 +56,7 @@ defmodule FileMonitor.WorkerTest do
 
     on_exit(fn ->
       Application.put_env(:gust, :file_reload_delay, 1_000)
+      Application.put_env(:gust, :dags_folder, original_dags_folder)
     end)
 
     %{dag_watcher_pid: pid}
@@ -83,7 +87,6 @@ defmodule FileMonitor.WorkerTest do
     {:ok, restarted_pid} =
       GenServer.start_link(Gust.FileMonitor.Worker, %{
         id: "default-folder",
-        dags_folder: tmp_dir,
         loader: self()
       })
 

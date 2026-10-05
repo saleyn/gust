@@ -61,7 +61,7 @@ defmodule Gust.DAG.Source.Folder do
 
   @impl true
   def monitor(loader_pid, config) do
-    folder = get_folder_from_config(config)
+    folder = folder(config)
 
     {:ok, watcher_pid} = Gust.FileMonitor.start_link(dirs: [folder])
     Gust.FileMonitor.watch(watcher_pid)
@@ -72,19 +72,24 @@ defmodule Gust.DAG.Source.Folder do
   @impl true
   def name, do: @name
 
+  @impl true
+  def validate(env, config), do: Folder.verify(env, folder(config))
+
+  @doc """
+  Resolves the folder for a source config: the source `:folder` option first,
+  then the legacy `:dags_folder` application env.
+  """
+  def folder(config) when is_list(config), do: folder(Map.new(config))
+
+  def folder(config) when is_map(config) do
+    Map.get(config, :folder) || Application.get_env(:gust, :dags_folder)
+  end
+
+  def folder(_config), do: Application.get_env(:gust, :dags_folder)
+
   defp get_folder do
-    Gust.DAG.Source.config()
-    |> Keyword.get(:folder, Application.get_env(:gust, :dags_folder))
+    Gust.DAG.Source.configs()
+    |> Enum.find(&(Gust.DAG.Source.Config.source_module(&1) == __MODULE__))
+    |> folder()
   end
-
-  defp get_folder_from_config(config) when is_list(config) do
-    Keyword.get(config, :folder, Keyword.get(config, :dags_folder, get_folder()))
-  end
-
-  defp get_folder_from_config(config) when is_map(config) do
-    config
-    |> Map.get(:folder, Map.get(config, :dags_folder, get_folder()))
-  end
-
-  defp get_folder_from_config(_config), do: get_folder()
 end
